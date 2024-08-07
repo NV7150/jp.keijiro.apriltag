@@ -1,4 +1,5 @@
 using Unity.Collections;
+using Unity.Mathematics;
 using Unity.Jobs;
 using System;
 using System.Collections.Generic;
@@ -56,9 +57,22 @@ public sealed class TagDetector : System.IDisposable
       (ReadOnlySpan<Color32> image, float fov, float tagSize)
     {
         ImageConverter.Convert(image, _image);
-        RunDetectorAndEstimator(fov, tagSize);
+
+        var width = _image.Width;
+        var height = _image.Height;
+        
+        var focalLengthScale = _image.Height / 2.0 / math.tan(fov / 2);
+        var focalLength = math.double2(focalLengthScale, focalLengthScale);
+        var focalCenter = math.double2(width, height) / 2;
+        
+        RunDetectorAndEstimator(focalLength, focalCenter, tagSize);
     }
 
+    public void ProcessImage(ReadOnlySpan<Color32> image, double2 focalLength, double2 focalCenter, float tagSize) {
+        ImageConverter.Convert(image, _image);
+        RunDetectorAndEstimator(focalLength, focalCenter, tagSize);
+    }
+    
     #endregion
 
     #region Private objects
@@ -84,7 +98,7 @@ public sealed class TagDetector : System.IDisposable
     // Unity's job system. It's a bit complicated due to "impedance mismatch"
     // things (unmanaged vs managed vs Unity DOTS).
     //
-    void RunDetectorAndEstimator(float fov, float tagSize)
+    void RunDetectorAndEstimator(double2 focalLength, double2 focalCenter, float tagSize)
     {
         _profileData = null;
 
@@ -108,7 +122,7 @@ public sealed class TagDetector : System.IDisposable
 
         // Pose estimation job
         var job = new PoseEstimationJob
-          (jobInput, jobOutput, _image.Width, _image.Height, fov, tagSize);
+          (jobInput, jobOutput,  focalLength, focalCenter, tagSize);
 
         // Run and wait the jobs.
         job.Schedule(tagCount, 1, default(JobHandle)).Complete();
